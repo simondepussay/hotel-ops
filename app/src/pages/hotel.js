@@ -6,6 +6,7 @@ import { KIND_ICONS } from './room.js';
 import { api, session } from '../api.js';
 import { navigate } from '../main.js';
 import { topBar, errorBox, showError, loading, parseRoomNumbers } from './common.js';
+import { live } from '../live.js';
 
 
 export async function hotelPage(hotelId) {
@@ -14,6 +15,7 @@ export async function hotelPage(hotelId) {
   let filter = store('hotelops.filter') || 'all';
   let tab = new URLSearchParams(location.search).get('tab') || 'rooms';
   let timer = null;
+  let conn = null; // connexion temps réel, ouverte après le premier chargement
 
   const body = h('section', { class: 'page' });
 
@@ -93,13 +95,14 @@ export async function hotelPage(hotelId) {
                 h('span', { class: 'room-number' }, r.number),
                 h('span', { class: 'room-state' }, icon(r.status, 20), t(r.status)),
                 r.occupied ? h('span', { class: 'room-badge' }, icon('user', 16), t('occupied')) : null,
+                r.chatUnread ? h('span', { class: 'room-chat-badge', title: t('newMessages') }, icon('chat', 16), String(r.chatUnread)) : null,
                 h('span', { class: 'room-meta' }, ago(r.lastCleanedAt)),
               ),
             ),
           )
         : h('p', { class: 'empty' }, t('noRooms')),
     );
-    timer = setInterval(refreshRooms, 20000);
+    timer = setInterval(() => !conn?.connected && refreshRooms(), 20000);
   }
 
   async function refreshRooms() {
@@ -132,7 +135,7 @@ export async function hotelPage(hotelId) {
           { class: 'request-main' },
           h('strong', { class: 'request-room' }, `${t('room')} ${r.roomNumber}`),
           h('span', { class: 'request-kind' }, icon(KIND_ICONS[r.kind] || 'chat', 18), kindLabel(r.kind, lang)),
-          r.text ? h('p', { class: 'request-text' }, r.text, r.lang ? h('small', null, ` (${r.lang})`) : null) : null,
+          r.text ? requestText(r) : null,
           h('small', null, ago(r.at), r.doneBy ? ` · ${r.doneBy}` : ''),
         ),
         r.status === 'open'
@@ -150,14 +153,37 @@ export async function hotelPage(hotelId) {
             )
           : null,
       );
+    // Chambres avec des messages non lus : un appui ouvre la chambre et son chat.
+    const unread = data.rooms.filter((r) => r.chatUnread);
     fill(body, 
+      unread.length ? h('h2', { class: 'with-icon' }, icon('chat', 22), t('newMessages')) : null,
+      unread.length
+        ? h(
+            'div',
+            { class: 'chat-links' },
+            unread.map((r) =>
+              h('a', { href: `/r/${r.code}`, 'data-link': true, class: 'btn-big btn-primary' }, `${t('room')} ${r.number}`, h('span', { class: 'count' }, String(r.chatUnread))),
+            ),
+          )
+        : null,
       h('h2', null, `${t('openRequests')} (${open.length})`),
       open.length ? h('ul', { class: 'requests' }, open.map(item)) : h('p', { class: 'empty' }, t('noRequests')),
       done.length ? h('h2', null, t('doneRequests')) : null,
       done.length ? h('ul', { class: 'requests' }, done.map(item)) : null,
     );
     clearInterval(timer);
-    timer = setInterval(() => tab === 'requests' && drawRequests(), 15000);
+    timer = setInterval(() => tab === 'requests' && !conn?.connected && drawRequests(), 15000);
+  }
+
+  // Texte libre d'une demande, traduit dans la langue du staff, avec le texte d'origine en dessous.
+  function requestText(r) {
+    const translated = r.lang !== lang ? r.tr?.[lang] : null;
+    return h(
+      'p',
+      { class: 'request-text' },
+      translated || r.text,
+      translated ? h('small', { class: 'request-original', lang: r.lang }, `${t('showOriginal')} (${r.lang}) : ${r.text}`) : r.lang ? h('small', null, ` (${r.lang})`) : null,
+    );
   }
 
   // --- Équipe (director) ---
@@ -307,5 +333,28 @@ export async function hotelPage(hotelId) {
 
   mount(topBar('…'), loading());
   await load();
-  return () => clearInterval(timer);
+
+  // Temps réel : nouvelle demande, nouveau message ou chambre modifiée → on recharge l'onglet affiché.
+  let pending = null;
+  conn = live(`hotels/${hotelId}/live`, () => {
+    if (!data) return;
+    clearTimeout(pending); // plusieurs signaux d'affilée : un seul rechargement
+    pending = setTimeout(async () => {
+      if (tab === 'rooms' || tab === 'requests') {
+        try {
+          data = await api(`hotels/${hotelId}`);
+        } catch {
+          return;
+        }
+        if (tab === 'rooms') drawRooms();
+        else drawRequests();
+      }
+    }, 300);
+  });
+
+  return () => {
+    clearInterval(timer);
+    clearTimeout(pending);
+    conn.stop();
+  };
 }

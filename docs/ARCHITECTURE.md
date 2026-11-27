@@ -30,10 +30,12 @@ Le QR mène à `https://<site>/r/<code-chambre>`. La page s'adapte à la personn
 |---|---|---|
 | Site + API | **Azure Static Web Apps** (Free) + Functions gérées (Node, JavaScript) | Gratuit |
 | Base de données | **Azure Table Storage** (compte de stockage) | Quelques centimes par mois |
-| Chat en temps réel | **Azure Web PubSub** (Free : 20 connexions) | Gratuit au début, phase 3 |
-| Traduction du chat | **Azure AI Translator** (F0 : 2 M caractères par mois) | Gratuit au début, phase 3 |
+| Chat en temps réel | **Azure Web PubSub** (Free : 20 connexions simultanées, 20 000 messages par jour) | Gratuit |
+| Traduction du chat | **Azure AI Translator** (F0 : 2 M caractères par mois) | Gratuit |
 
-Régions : la SWA est en East Asia ; le stockage est en Korea Central, car l'abonnement étudiant bloque Japan East.
+Régions : la SWA est en East Asia. Le stockage, Web PubSub et Translator sont en Korea Central, car l'abonnement étudiant bloque Japan East.
+
+Limite à surveiller : le plan Free de Web PubSub accepte 20 connexions en même temps, staff et clients compris. Pour un vrai hôtel, il faudra le plan Standard, payant.
 
 En local, **Azurite** émule Table Storage, sans Docker.
 
@@ -58,9 +60,30 @@ Le staff se connecte avec un **identifiant** créé par le director. Pas besoin 
 | `rooms` | hotelId | roomId | numéro, étage, code QR, statut, dernier ménage, séjour en cours |
 | `roomcodes` | `code` | code QR | hotelId, roomId (pour retrouver la chambre depuis le QR) |
 | `events` | roomId | horodatage inversé | historique : ménages, commentaires, consommations |
-| `requests` | hotelId | horodatage inversé | demandes des clients |
+| `requests` | hotelId | horodatage inversé | demandes des clients (texte libre traduit dans `tr`) |
+| `messages` | stayId | horodatage croissant | chat d'un séjour : texte d'origine, langue détectée, traductions (`tr`) |
 
-L'horodatage inversé (`9999999999999 - Date.now()`) fait sortir les éléments les plus récents en premier.
+L'horodatage inversé (`9999999999999 - Date.now()`) fait sortir les éléments les plus récents en premier. Le chat utilise l'ordre croissant, pour lire le fil du plus ancien au plus récent.
+
+## Chat et traduction
+
+- Un fil par **séjour** (`stayId`). Au départ du client, le séjour change, donc le fil n'est plus visible ni pour le client ni pour le staff de la chambre.
+- La traduction se fait **une seule fois, à l'envoi**, et elle est enregistrée avec le message :
+  - un message du client est traduit en japonais, anglais et français, les langues du staff ;
+  - un message du staff est traduit dans la langue du client, et aussi en ja/en/fr pour les autres employés.
+- Translator détecte la langue réellement écrite. Si un client a choisi l'anglais mais écrit en chinois, la traduction reste juste.
+- Chacun voit le message dans sa langue, avec un bouton « original ». Une erreur de traduction se repère toujours.
+- Si Translator ne répond pas, le message part quand même, sans traduction.
+
+## Temps réel
+
+- **Web PubSub** envoie de petits signaux : `message`, `request`, `room`, `stay_end`. La page recharge alors ce qui a changé par l'API. Aucune donnée ne passe par le WebSocket, donc les droits restent vérifiés par l'API.
+- Deux types de groupes :
+  - `hotel.<id>` pour le staff de l'hôtel ;
+  - `stay.<id>` pour le client d'un séjour.
+- Le jeton WebSocket donné au navigateur n'a **aucun droit** d'envoi ni de changement de groupe : il écoute seulement.
+- Il expire après 2 h. La page se reconnecte alors toute seule, et aussi au retour sur l'onglet.
+- Si Web PubSub n'est pas configuré, les pages se rafraîchissent toutes les 15 à 20 secondes.
 
 ## Langues
 
@@ -71,7 +94,7 @@ L'horodatage inversé (`9999999999999 - Date.now()`) fait sortir les éléments 
 
 1. **Fondations** ✅ : inscription director, connexion, hôtels, chambres (création en série « 101-120 »), comptes staff, QR imprimables, page `/r/:code` qui change selon le rôle.
 2. **Vue staff** ✅ (version de base) : à faire / en cours / fait, dernière fois, commentaires par type, historique, arrivée et départ du client.
-3. **Client** : demandes ✅ (version de base). Restent le chat temps réel (Web PubSub) et la traduction (Translator).
+3. **Client** ✅ : demandes, chat temps réel avec le staff (Web PubSub), traduction automatique dans les deux sens (Translator).
 4. **Éditeur de plan** : grille vue de haut, pinceaux (moquette, carrelage, mur, porte), chambres posées sur la grille, plusieurs étages. Le plan devient le tableau de bord, chaque chambre colorée selon son état.
 5. **Mode chronométré** : scan au début, scan à la fin, puis « facile / normal / difficile ». Temps moyen par chambre et par employé.
 6. **App iPhone** : plus tard, avec la même API.

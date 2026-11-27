@@ -1,21 +1,15 @@
 import { route, need, str, HttpError } from '../lib/http.js';
 import { list, merge, insert, get, recentKey } from '../lib/db.js';
-import { makeToken, readToken, requireUser } from '../lib/auth.js';
-import { loadHotel, roomByCode } from '../lib/model.js';
+import { makeToken, requireUser } from '../lib/auth.js';
+import { loadHotel, roomByCode, guestStay } from '../lib/model.js';
+import { translate, STAFF_LANGS } from '../lib/translate.js';
+import { publish, clientUrl, hotelGroup, stayGroup } from '../lib/realtime.js';
+
+export const GUEST_LANGS = ['ja', 'en', 'zh', 'ko', 'fr', 'es', 'de'];
 
 const KINDS = ['towels', 'cleaning', 'amenities', 'problem', 'other'];
 const MAX_FAILS = 5;
 const LOCK_MS = 10 * 60 * 1000;
-
-// Vérifie que le jeton client correspond au séjour en cours de cette chambre.
-async function guestStay(request, code) {
-  const p = readToken(request.headers.get('x-guest-token'));
-  const { room, hotel } = await roomByCode(code);
-  if (!p || p.role !== 'guest' || !room.stayId || p.stayId !== room.stayId || p.roomId !== room.rowKey) {
-    throw new HttpError(401, 'stay_expired');
-  }
-  return { room, hotel, stayId: p.stayId };
-}
 
 function publicRequest(r) {
   return {
@@ -25,6 +19,7 @@ function publicRequest(r) {
     kind: r.kind,
     text: r.text,
     lang: r.lang,
+    tr: r.tr ? JSON.parse(r.tr) : {},
     status: r.status,
     at: r.at,
     doneBy: r.doneBy || null,
@@ -47,7 +42,8 @@ route('guest-join', ['POST'], 'r/{code}/join', async ({ params, body }) => {
     });
     throw new HttpError(401, 'bad_pin');
   }
-  await merge('rooms', { partitionKey: room.partitionKey, rowKey: room.rowKey, pinFails: 0 });
+  const guestLang = GUEST_LANGS.includes(body.lang) ? body.lang : room.guestLang || '';
+  await merge('rooms', { partitionKey: room.partitionKey, rowKey: room.rowKey, pinFails: 0, guestLang });
   const token = makeToken({ role: 'guest', roomId: room.rowKey, stayId: room.stayId }, 30);
   return { token };
 });
@@ -59,11 +55,14 @@ route('guest-requests-list', ['GET'], 'r/{code}/requests', async ({ request, par
   return { requests: all.filter((r) => r.stayId === stayId).map(publicRequest) };
 });
 
-route('guest-requests-create', ['POST'], 'r/{code}/requests', async ({ request, params, body }) => {
+route('guest-requests-create', ['POST'], 'r/{code}/requests', async ({ request, context, params, body }) => {
   const { room, hotel, stayId } = await guestStay(request, params.code);
   const kind = KINDS.includes(body.kind) ? body.kind : 'other';
   const text = str(body.text, 500);
   if (kind === 'other') need(text);
+  const lang = GUEST_LANGS.includes(body.lang) ? body.lang : '';
+  // Le texte libre est traduit pour le staff (japonais, anglais, français).
+  const { from, tr } = await translate(text, STAFF_LANGS, { log: context.log });
   const req = {
     partitionKey: hotel.rowKey,
     rowKey: recentKey(),
@@ -72,11 +71,13 @@ route('guest-requests-create', ['POST'], 'r/{code}/requests', async ({ request, 
     stayId,
     kind,
     text,
-    lang: str(body.lang, 5),
+    lang: from || lang,
+    tr: JSON.stringify(tr),
     status: 'open',
     at: new Date().toISOString(),
   };
   await insert('requests', req);
+  await publish(hotelGroup(hotel.rowKey), { type: 'request', roomId: room.rowKey, roomNumber: room.number }, context.log);
   return { request: publicRequest(req) };
 });
 
@@ -88,7 +89,7 @@ route('hotel-requests-list', ['GET'], 'hotels/{hotelId}/requests', async ({ requ
   return { requests: all.map(publicRequest) };
 });
 
-route('hotel-requests-update', ['PATCH'], 'hotels/{hotelId}/requests/{id}', async ({ request, params, body }) => {
+route('hotel-requests-update', ['PATCH'], 'hotels/{hotelId}/requests/{id}', async ({ request, context, params, body }) => {
   const user = requireUser(request);
   const hotel = await loadHotel(params.hotelId, user);
   const req = await get('requests', hotel.rowKey, params.id);
@@ -100,5 +101,19 @@ route('hotel-requests-update', ['PATCH'], 'hotels/{hotelId}/requests/{id}', asyn
     status,
     doneBy: status === 'done' ? user.name || user.sub : '',
   });
+  await publish(hotelGroup(hotel.rowKey), { type: 'request' }, context.log);
+  await publish(stayGroup(req.stayId), { type: 'request' }, context.log);
   return { ok: true };
+});
+
+// Adresses WebSocket (Web PubSub). `url` vaut null si le temps réel n'est pas configuré.
+route('guest-live', ['GET'], 'r/{code}/live', async ({ request, params }) => {
+  const { stayId } = await guestStay(request, params.code);
+  return { url: await clientUrl(`guest-${stayId}`, [stayGroup(stayId)]) };
+});
+
+route('hotel-live', ['GET'], 'hotels/{hotelId}/live', async ({ request, params }) => {
+  const user = requireUser(request);
+  const hotel = await loadHotel(params.hotelId, user);
+  return { url: await clientUrl(user.sub, [hotelGroup(hotel.rowKey)]) };
 });

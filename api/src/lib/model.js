@@ -1,6 +1,6 @@
 // Fonctions partagées entre les routes : chargement et forme publique des objets.
 import { get } from './db.js';
-import { canAccessHotel } from './auth.js';
+import { canAccessHotel, readToken } from './auth.js';
 import { HttpError } from './http.js';
 
 export async function loadHotel(hotelId, user) {
@@ -34,6 +34,8 @@ export function publicRoom(r) {
     occupied: !!r.stayId,
     stayPin: r.stayPin || null,
     stayStartedAt: r.stayStartedAt || null,
+    guestLang: r.guestLang || null,
+    chatUnread: r.stayId ? r.chatUnread || 0 : 0,
   };
 }
 
@@ -46,4 +48,14 @@ export async function roomByCode(code) {
   const hotel = await get('hotels', 'hotel', link.hotelId);
   if (!hotel) throw new HttpError(404, 'hotel_not_found');
   return { room, hotel };
+}
+
+// Vérifie que le jeton client correspond au séjour en cours de cette chambre.
+export async function guestStay(request, code) {
+  const p = readToken(request.headers.get('x-guest-token'));
+  const { room, hotel } = await roomByCode(code);
+  if (!p || p.role !== 'guest' || !room.stayId || p.stayId !== room.stayId || p.roomId !== room.rowKey) {
+    throw new HttpError(401, 'stay_expired');
+  }
+  return { room, hotel, stayId: p.stayId };
 }
