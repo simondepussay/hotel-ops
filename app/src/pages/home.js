@@ -1,4 +1,5 @@
 import { h, mount, formData } from '../dom.js';
+import { icon } from '../icons.js';
 import { t, errText } from '../i18n/staff.js';
 import { api, session } from '../api.js';
 import { navigate } from '../main.js';
@@ -44,7 +45,7 @@ export async function homePage() {
     h(
       'section',
       { class: 'page narrow stack' },
-      hotels.map((ho) => h('a', { href: `/h/${ho.id}`, 'data-link': true, class: 'btn-big btn-tile' }, '🏨 ', ho.name)),
+      hotels.map((ho) => h('a', { href: `/h/${ho.id}`, 'data-link': true, class: 'btn-big btn-tile' }, icon('building', 26), ho.name)),
       form,
     ),
   );

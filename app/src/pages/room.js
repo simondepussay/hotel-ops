@@ -4,6 +4,7 @@ import { t, errText, ago, dateTime } from '../i18n/staff.js';
 import { gt, guestLang, setGuestLang, GUEST_LANGS } from '../i18n/guest.js';
 import { api, guestToken } from '../api.js';
 import { topBar, loading, formatDuration } from './common.js';
+import { icon } from '../icons.js';
 
 export async function roomPage(code) {
   mount(loading());
@@ -47,7 +48,7 @@ function staffRoom(code, data) {
           'div',
           { class: 'difficulty' },
           ['easy', 'normal', 'hard'].map((d) =>
-            h('button', { class: `btn-big diff-${d}`, onClick: () => setStatus('done', d) }, t(d)),
+            h('button', { class: `btn-big diff-${d}`, onClick: () => setStatus('done', d) }, icon(d, 28), t(d)),
           ),
         ),
       );
@@ -64,7 +65,7 @@ function staffRoom(code, data) {
         return h(
           'div',
           { class: 'stack' },
-          h('p', { class: 'center' }, `⏱ ${t('elapsed')}`),
+          h('p', { class: 'center with-icon' }, icon('clock', 20), t('elapsed')),
           clock,
           h(
             'button',
@@ -75,6 +76,7 @@ function staffRoom(code, data) {
                 draw();
               },
             },
+            icon('stop', 30),
             t('finishCleaning'),
           ),
         );
@@ -82,15 +84,15 @@ function staffRoom(code, data) {
       return h(
         'div',
         { class: 'stack' },
-        h('button', { class: 'btn-huge btn-primary', onClick: () => setStatus('cleaning') }, t('startCleaning')),
+        h('button', { class: 'btn-huge btn-primary', onClick: () => setStatus('cleaning') }, icon('play', 30), t('startCleaning')),
         room.status === 'done'
-          ? h('button', { class: 'btn-big btn-neutral', onClick: () => setStatus('todo') }, t('markTodo'))
+          ? h('button', { class: 'btn-big btn-neutral', onClick: () => setStatus('todo') }, icon('undo'), t('markTodo'))
           : null,
       );
     }
     return room.status === 'done'
-      ? h('button', { class: 'btn-huge btn-neutral', onClick: () => setStatus('todo') }, t('markTodo'))
-      : h('button', { class: 'btn-huge btn-success', onClick: () => setStatus('done') }, t('markDone'));
+      ? h('button', { class: 'btn-huge btn-neutral', onClick: () => setStatus('todo') }, icon('undo', 30), t('markTodo'))
+      : h('button', { class: 'btn-huge btn-success', onClick: () => setStatus('done') }, icon('check', 30), t('markDone'));
   }
 
   function stayBlock() {
@@ -98,7 +100,7 @@ function staffRoom(code, data) {
       return h(
         'div',
         { class: 'card stack' },
-        h('p', null, t('stayPin')),
+        h('p', { class: 'with-icon' }, icon('key', 20), t('stayPin')),
         h('p', { class: 'pin' }, room.stayPin),
         h(
           'button',
@@ -110,6 +112,7 @@ function staffRoom(code, data) {
               reload();
             },
           },
+          icon('door'),
           t('checkout'),
         ),
       );
@@ -127,6 +130,7 @@ function staffRoom(code, data) {
             reload();
           },
         },
+        icon('bell'),
         t('checkin'),
       ),
     );
@@ -135,9 +139,9 @@ function staffRoom(code, data) {
   function commentBlock() {
     const text = h('textarea', { rows: 3, placeholder: t('commentPlaceholder'), maxlength: 1000 });
     const cats = [
-      ['cleaning', t('catCleaning')],
-      ['consumption', t('catConsumption')],
-      ['room', t('catRoom')],
+      ['cleaning', t('catCleaning'), 'broom'],
+      ['consumption', t('catConsumption'), 'cup'],
+      ['room', t('catRoom'), 'bed'],
     ];
     return h(
       'form',
@@ -154,7 +158,7 @@ function staffRoom(code, data) {
       h(
         'div',
         { class: 'segmented' },
-        cats.map(([k, label]) =>
+        cats.map(([k, label, ic]) =>
           h(
             'button',
             {
@@ -166,12 +170,13 @@ function staffRoom(code, data) {
                 e.currentTarget.classList.add('active');
               },
             },
+            icon(ic),
             label,
           ),
         ),
       ),
       text,
-      h('button', { class: 'btn-big btn-primary', type: 'submit' }, t('send')),
+      h('button', { class: 'btn-big btn-primary', type: 'submit' }, icon('send'), t('send')),
     );
   }
 
@@ -179,11 +184,13 @@ function staffRoom(code, data) {
     const durations = events.filter((e) => e.kind === 'cleaning_done' && e.durationSec).map((e) => e.durationSec);
     const avg = durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null;
     const catLabel = { cleaning: t('catCleaning'), consumption: t('catConsumption'), room: t('catRoom') };
+    const catIcon = { cleaning: 'broom', consumption: 'cup', room: 'bed' };
+    const evIcon = { cleaning_start: 'play', cleaning_done: 'done', status_todo: 'undo', checkin: 'bell', checkout: 'door' };
     return h(
       'div',
       { class: 'stack' },
       h('h2', null, t('history')),
-      avg !== null ? h('p', null, `⏱ ${t('avgTime')} : ${formatDuration(avg)} (${durations.length})`) : null,
+      avg !== null ? h('p', { class: 'with-icon' }, icon('clock', 20), `${t('avgTime')} : ${formatDuration(avg)} (${durations.length})`) : null,
       events.length
         ? h(
             'ul',
@@ -195,12 +202,12 @@ function staffRoom(code, data) {
                 h(
                   'div',
                   { class: 'ev-head' },
-                  h('strong', null, e.kind === 'comment' ? catLabel[e.category] : t('ev_' + e.kind)),
+                  h('strong', { class: 'with-icon' }, icon(e.kind === 'comment' ? catIcon[e.category] || 'chat' : evIcon[e.kind] || 'clock', 18), e.kind === 'comment' ? catLabel[e.category] : t('ev_' + e.kind)),
                   h('small', null, `${dateTime(e.at)}${e.byName ? ' · ' + e.byName : ''}`),
                 ),
                 e.text ? h('p', null, e.text) : null,
-                e.durationSec ? h('small', null, `⏱ ${formatDuration(e.durationSec)}`) : null,
-                e.difficulty ? h('small', null, ` · ${t(e.difficulty)}`) : null,
+                e.durationSec ? h('small', { class: 'with-icon' }, icon('clock', 14), formatDuration(e.durationSec)) : null,
+                e.difficulty ? h('small', { class: 'with-icon' }, ' · ', icon(e.difficulty, 14), t(e.difficulty)) : null,
               ),
             ),
           )
@@ -235,82 +242,122 @@ function staffRoom(code, data) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Vue client (sans compte)                                            */
+/* Vue client (sans compte), au style de Clean Work : blanc, bleus,    */
+/* bordeaux pour l'action principale, vagues pâles en arrière-plan.    */
 /* ------------------------------------------------------------------ */
 
-const KINDS = [
-  ['towels', '🧺'],
-  ['cleaning', '🧹'],
-  ['amenities', '🧴'],
-  ['problem', '🔧'],
-  ['other', '💬'],
-];
+export const KIND_ICONS = { towels: 'towel', cleaning: 'sparkle', amenities: 'bottle', problem: 'wrench', other: 'chat' };
+const KINDS = Object.entries(KIND_ICONS);
+const WELCOME = ['ようこそ', 'Welcome', '欢迎', '환영합니다'];
 
 function guestRoom(code, data) {
   let token = guestToken.get(code);
   let choosing = !guestLang();
+  let menuOpen = false;
   let selected = null;
   let notice = '';
+  document.body.classList.add('guest-mode');
 
-  function header() {
+  function chooseLang(k) {
+    setGuestLang(k);
+    choosing = false;
+    menuOpen = false;
+    draw();
+  }
+
+  // Globe rond avec le code de la langue, et petit menu (comme dans Clean Work).
+  function languageMenu() {
+    const current = guestLang();
     return h(
-      'header',
-      { class: 'guest-header' },
-      h('div', null, h('small', null, data.hotel.name), h('h1', null, `${gt('room')} ${data.room.number}`)),
-      !choosing
+      'div',
+      { class: 'g-language' },
+      h(
+        'button',
+        {
+          class: 'g-round',
+          'aria-label': gt('changeLang'),
+          'aria-expanded': String(menuOpen),
+          onClick: () => {
+            menuOpen = !menuOpen;
+            draw();
+          },
+        },
+        icon('globe', 20),
+        current ? h('span', { class: 'g-code' }, current.toUpperCase()) : null,
+      ),
+      menuOpen
         ? h(
-            'button',
-            {
-              class: 'btn-small',
-              onClick: () => {
-                choosing = true;
-                draw();
-              },
-            },
-            '🌐 ',
-            GUEST_LANGS[guestLang()] || gt('changeLang'),
+            'div',
+            { class: 'g-menu', role: 'menu' },
+            h('p', { class: 'g-menu-title' }, gt('changeLang')),
+            Object.entries(GUEST_LANGS).map(([k, label]) =>
+              h(
+                'button',
+                { role: 'menuitemradio', 'aria-checked': String(k === current), lang: k, onClick: () => chooseLang(k) },
+                label,
+                k === current ? icon('check', 18) : null,
+              ),
+            ),
           )
         : null,
     );
   }
 
+  function header() {
+    return h(
+      'header',
+      { class: 'g-topbar' },
+      h(
+        'div',
+        { class: 'g-brand' },
+        h('span', { class: 'g-brand-mark' }, icon('building', 20)),
+        h('span', null, data.hotel.name),
+      ),
+      choosing ? null : languageMenu(),
+    );
+  }
+
+  function hero(title, lead) {
+    return h(
+      'div',
+      { class: 'g-hero' },
+      h('p', { class: 'g-eyebrow' }, `${gt('room')} ${data.room.number}`),
+      h('h1', null, title),
+      lead ? h('p', { class: 'g-lead' }, lead) : null,
+    );
+  }
+
   function footer() {
-    return h('footer', { class: 'guest-footer' }, h('a', { href: `/login?next=/r/${code}`, 'data-link': true }, 'Staff'));
+    return h(
+      'footer',
+      { class: 'g-footer' },
+      h('span', null, data.hotel.name),
+      h('a', { href: `/login?next=/r/${code}`, 'data-link': true }, 'Staff'),
+    );
   }
 
   function langChooser() {
     return h(
       'section',
-      { class: 'page narrow stack' },
-      h('h2', { class: 'center' }, gt('chooseLang')),
+      { class: 'g-shell' },
+      h('div', { class: 'g-hero center' }, h('p', { class: 'g-eyebrow' }, `Room ${data.room.number}`), h('h1', { class: 'g-welcome' }, WELCOME.map((w) => h('span', null, w)))),
       h(
         'div',
-        { class: 'lang-grid' },
+        { class: 'g-card g-lang-list' },
         Object.entries(GUEST_LANGS).map(([k, label]) =>
-          h(
-            'button',
-            {
-              class: 'btn-big btn-tile',
-              lang: k,
-              onClick: () => {
-                setGuestLang(k);
-                document.documentElement.lang = k;
-                choosing = false;
-                draw();
-              },
-            },
-            label,
-          ),
+          h('button', { lang: k, onClick: () => chooseLang(k) }, h('span', null, label), icon('next', 18)),
         ),
       ),
     );
   }
 
   function pinForm() {
-    if (!data.room.occupied) return h('p', { class: 'card center' }, gt('noStay'));
-    const err = h('p', { class: 'error', hidden: true });
+    if (!data.room.occupied) {
+      return h('div', { class: 'g-card g-info' }, icon('bell', 28), h('p', null, gt('noStay')));
+    }
+    const err = h('p', { class: 'g-error', hidden: true });
     const input = h('input', {
-      class: 'pin-input',
+      class: 'g-pin',
       inputmode: 'numeric',
       pattern: '[0-9]*',
       maxlength: 4,
@@ -320,13 +367,14 @@ function guestRoom(code, data) {
     return h(
       'form',
       {
-        class: 'card stack',
+        class: 'g-card g-stack',
         onSubmit: async (e) => {
           e.preventDefault();
           try {
             const res = await api(`r/${code}/join`, { method: 'POST', body: { pin: input.value.trim() } });
             token = res.token;
             guestToken.set(code, token);
+            notice = '';
             draw();
           } catch (ex) {
             err.textContent = ex.code === 'locked' ? gt('locked') : ex.code === 'bad_pin' ? gt('badPin') : gt('error');
@@ -334,10 +382,10 @@ function guestRoom(code, data) {
           }
         },
       },
-      h('p', { class: 'center' }, gt('enterPin')),
+      h('p', { class: 'g-with-icon' }, icon('key', 20), gt('enterPin')),
       input,
       err,
-      h('button', { class: 'btn-big btn-primary', type: 'submit' }, gt('join')),
+      h('button', { class: 'g-primary', type: 'submit' }, gt('join'), icon('arrow', 18)),
     );
   }
 
@@ -354,25 +402,27 @@ function guestRoom(code, data) {
       }
     }
     const text = h('textarea', { rows: 3, placeholder: gt('messagePlaceholder'), maxlength: 500 });
-    fill(container, 
-      notice ? h('p', { class: 'ok' }, notice) : null,
-      h('h2', { class: 'center' }, gt('whatNeed')),
+    fill(
+      container,
+      hero(gt('welcome'), gt('whatNeed')),
+      notice ? h('p', { class: 'g-notice', role: 'status' }, icon('check', 18), notice) : null,
       h(
         'div',
-        { class: 'kind-grid' },
-        KINDS.map(([k, icon]) =>
+        { class: 'g-kinds' },
+        KINDS.map(([k, ic]) =>
           h(
             'button',
             {
-              class: 'btn-big btn-tile' + (selected === k ? ' active' : ''),
+              class: 'g-kind' + (selected === k ? ' current' : ''),
+              'aria-pressed': String(selected === k),
               onClick: () => {
                 selected = k;
                 notice = '';
                 mainView(container);
               },
             },
-            h('span', { class: 'kind-icon' }, icon),
-            gt(k),
+            h('span', { class: 'g-kind-icon' }, icon(ic, 26)),
+            h('span', null, gt(k)),
           ),
         ),
       ),
@@ -380,7 +430,7 @@ function guestRoom(code, data) {
         ? h(
             'form',
             {
-              class: 'card stack',
+              class: 'g-card g-stack',
               onSubmit: async (e) => {
                 e.preventDefault();
                 if (selected === 'other' && !text.value.trim()) return;
@@ -398,41 +448,47 @@ function guestRoom(code, data) {
                 mainView(container);
               },
             },
-            h('strong', null, gt(selected)),
+            h('h2', { class: 'g-with-icon' }, icon(KIND_ICONS[selected], 22), gt(selected)),
             text,
-            h('button', { class: 'btn-big btn-primary', type: 'submit' }, gt('send')),
             h(
-              'button',
-              {
-                type: 'button',
-                class: 'btn-link',
-                onClick: () => {
-                  selected = null;
-                  mainView(container);
+              'div',
+              { class: 'g-actions' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () => {
+                    selected = null;
+                    mainView(container);
+                  },
                 },
-              },
-              gt('cancel'),
+                gt('cancel'),
+              ),
+              h('button', { class: 'g-primary', type: 'submit' }, icon('send', 18), gt('send')),
             ),
           )
         : null,
-      requests.length ? h('h2', null, gt('myRequests')) : null,
-      h(
-        'ul',
-        { class: 'requests' },
-        requests.map((r) =>
-          h(
-            'li',
-            { class: 'request ' + r.status },
-            h(
-              'div',
-              { class: 'request-main' },
-              h('strong', null, gt(r.kind)),
-              r.text ? h('p', { class: 'request-text' }, r.text) : null,
+      requests.length ? h('h2', { class: 'g-section' }, gt('myRequests')) : null,
+      requests.length
+        ? h(
+            'ul',
+            { class: 'g-requests' },
+            requests.map((r) =>
+              h(
+                'li',
+                { class: 'g-card ' + r.status },
+                h('span', { class: 'g-kind-icon small' }, icon(KIND_ICONS[r.kind] || 'chat', 20)),
+                h('div', { class: 'g-request-main' }, h('strong', null, gt(r.kind)), r.text ? h('p', null, r.text) : null),
+                h(
+                  'span',
+                  { class: 'g-pill ' + r.status },
+                  r.status === 'done' ? icon('check', 14) : icon('clock', 14),
+                  r.status === 'done' ? gt('statusDone') : gt('statusOpen'),
+                ),
+              ),
             ),
-            h('span', { class: 'pill ' + r.status }, r.status === 'done' ? gt('statusDone') : gt('statusOpen')),
-          ),
-        ),
-      ),
+          )
+        : null,
     );
   }
 
@@ -440,21 +496,32 @@ function guestRoom(code, data) {
   function draw() {
     clearInterval(poll);
     document.documentElement.lang = guestLang() || 'en';
-    if (choosing) return mount(header(), langChooser(), footer());
+    const waves = h('div', { class: 'waves', 'aria-hidden': 'true' });
+    if (choosing) return mount(waves, header(), langChooser(), footer());
     if (!token) {
       return mount(
+        waves,
         header(),
-        h('section', { class: 'page narrow stack' }, notice ? h('p', { class: 'ok' }, notice) : null, pinForm()),
+        h(
+          'section',
+          { class: 'g-shell' },
+          hero(gt('welcome'), null),
+          notice ? h('p', { class: 'g-notice' }, notice) : null,
+          pinForm(),
+        ),
         footer(),
       );
     }
-    const container = h('section', { class: 'page narrow stack' }, loading());
-    mount(header(), container, footer());
+    const container = h('section', { class: 'g-shell' }, loading());
+    mount(waves, header(), container, footer());
     mainView(container);
     // Rafraîchit le statut des demandes (le chat temps réel viendra en phase 3).
-    poll = setInterval(() => !selected && mainView(container), 20000);
+    poll = setInterval(() => !selected && !menuOpen && mainView(container), 20000);
   }
 
   draw();
-  return () => clearInterval(poll);
+  return () => {
+    clearInterval(poll);
+    document.body.classList.remove('guest-mode');
+  };
 }

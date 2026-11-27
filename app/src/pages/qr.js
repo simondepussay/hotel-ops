@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import { h, mount } from '../dom.js';
+import { icon } from '../icons.js';
 import { t, errText } from '../i18n/staff.js';
 import { api } from '../api.js';
 import { topBar, loading } from './common.js';
@@ -31,7 +32,7 @@ export async function qrPage(hotelId) {
       'section',
       { class: 'page' },
       h('p', { class: 'no-print' }, t('qrHelp')),
-      h('button', { class: 'btn-big btn-primary no-print', onClick: () => window.print() }, t('print')),
+      h('button', { class: 'btn-big btn-primary no-print', onClick: () => window.print() }, icon('printer'), t('print')),
       h('div', { class: 'qr-grid' }, cards),
     ),
   );

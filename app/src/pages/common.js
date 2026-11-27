@@ -1,4 +1,5 @@
 import { h } from '../dom.js';
+import { icon } from '../icons.js';
 import { t, lang, setLang, STAFF_LANGS } from '../i18n/staff.js';
 import { session } from '../api.js';
 import { navigate, render } from '../main.js';
@@ -9,7 +10,7 @@ export function topBar(title, { back } = {}) {
   return h(
     'header',
     { class: 'topbar' },
-    back ? h('a', { href: back, 'data-link': true, class: 'topbar-back' }, t('back')) : null,
+    back ? h('a', { href: back, 'data-link': true, class: 'topbar-back', 'aria-label': t('back') }, icon('back', 26)) : null,
     h('h1', null, title),
     h(
       'div',
@@ -30,13 +31,15 @@ export function topBar(title, { back } = {}) {
         ? h(
             'button',
             {
-              class: 'btn-small',
+              class: 'btn-small btn-icon',
+              'aria-label': t('logout'),
+              title: t('logout'),
               onClick: () => {
                 session.clear();
                 navigate('/login');
               },
             },
-            t('logout'),
+            icon('logout', 20),
           )
         : null,
     ),

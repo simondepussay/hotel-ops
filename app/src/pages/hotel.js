@@ -1,11 +1,12 @@
 import { h, fill, mount, formData, store } from '../dom.js';
 import { t, errText, ago, lang } from '../i18n/staff.js';
 import { kindLabel } from '../i18n/guest.js';
+import { icon } from '../icons.js';
+import { KIND_ICONS } from './room.js';
 import { api, session } from '../api.js';
 import { navigate } from '../main.js';
 import { topBar, errorBox, showError, loading, parseRoomNumbers } from './common.js';
 
-const STATUS_ICON = { todo: '🧺', cleaning: '⏳', done: '✅' };
 
 export async function hotelPage(hotelId) {
   const isDirector = session.user?.role === 'director';
@@ -35,17 +36,17 @@ export async function hotelPage(hotelId) {
 
   function draw() {
     const tabs = [
-      ['rooms', t('tabRooms')],
-      ['requests', t('tabRequests')],
-      ...(isDirector ? [['team', t('tabTeam')], ['settings', t('tabSettings')]] : []),
+      ['rooms', t('tabRooms'), 'grid'],
+      ['requests', t('tabRequests'), 'inbox'],
+      ...(isDirector ? [['team', t('tabTeam'), 'users'], ['settings', t('tabSettings'), 'settings']] : []),
     ];
     mount(
       topBar(data.hotel.name, { back: isDirector ? '/' : null }),
       h(
         'nav',
         { class: 'tabs' },
-        tabs.map(([k, label]) =>
-          h('button', { class: 'tab' + (tab === k ? ' active' : ''), onClick: () => setTab(k) }, label),
+        tabs.map(([k, label, ic]) =>
+          h('button', { class: 'tab' + (tab === k ? ' active' : ''), onClick: () => setTab(k) }, icon(ic, 20), h('span', null, label)),
         ),
       ),
       body,
@@ -90,8 +91,8 @@ export async function hotelPage(hotelId) {
                 'a',
                 { href: `/r/${r.code}`, 'data-link': true, class: `room-tile status-${r.status}` },
                 h('span', { class: 'room-number' }, r.number),
-                h('span', { class: 'room-state' }, STATUS_ICON[r.status], ' ', t(r.status)),
-                r.occupied ? h('span', { class: 'room-badge' }, '👤 ', t('occupied')) : null,
+                h('span', { class: 'room-state' }, icon(r.status, 20), t(r.status)),
+                r.occupied ? h('span', { class: 'room-badge' }, icon('user', 16), t('occupied')) : null,
                 h('span', { class: 'room-meta' }, ago(r.lastCleanedAt)),
               ),
             ),
@@ -130,7 +131,7 @@ export async function hotelPage(hotelId) {
           'div',
           { class: 'request-main' },
           h('strong', { class: 'request-room' }, `${t('room')} ${r.roomNumber}`),
-          h('span', { class: 'request-kind' }, kindLabel(r.kind, lang)),
+          h('span', { class: 'request-kind' }, icon(KIND_ICONS[r.kind] || 'chat', 18), kindLabel(r.kind, lang)),
           r.text ? h('p', { class: 'request-text' }, r.text, r.lang ? h('small', null, ` (${r.lang})`) : null) : null,
           h('small', null, ago(r.at), r.doneBy ? ` · ${r.doneBy}` : ''),
         ),
@@ -144,6 +145,7 @@ export async function hotelPage(hotelId) {
                   drawRequests();
                 },
               },
+              icon('check'),
               t('requestDone'),
             )
           : null,
@@ -180,7 +182,7 @@ export async function hotelPage(hotelId) {
       h('label', null, t('username'), h('input', { name: 'username', autocapitalize: 'none', required: true })),
       h('label', null, t('password'), h('input', { name: 'password', type: 'text', minlength: 6, required: true })),
       err,
-      h('button', { class: 'btn-big btn-primary', type: 'submit' }, t('create')),
+      h('button', { class: 'btn-big btn-primary', type: 'submit' }, icon('plus'), t('create')),
     );
     fill(body, 
       h(
@@ -190,7 +192,7 @@ export async function hotelPage(hotelId) {
           h(
             'li',
             null,
-            h('span', null, '👤 ', h('strong', null, s.name), ` (${s.username})`),
+            h('span', { class: 'with-icon' }, icon('user', 20), h('strong', null, s.name), ` (${s.username})`),
             h(
               'button',
               {
@@ -201,6 +203,7 @@ export async function hotelPage(hotelId) {
                   load();
                 },
               },
+              icon('trash', 18),
               t('delete'),
             ),
           ),
@@ -243,7 +246,7 @@ export async function hotelPage(hotelId) {
       h('label', null, t('floor'), h('input', { name: 'floor' })),
       err,
       msg,
-      h('button', { class: 'btn-big btn-primary', type: 'submit' }, t('create')),
+      h('button', { class: 'btn-big btn-primary', type: 'submit' }, icon('plus'), t('create')),
     );
 
     const timing = h(
@@ -264,12 +267,13 @@ export async function hotelPage(hotelId) {
             drawSettings();
           },
         },
-        data.hotel.timingMode ? `⏱ ${t('on')}` : t('off'),
+        icon('clock'),
+        data.hotel.timingMode ? t('on') : t('off'),
       ),
     );
 
     fill(body, 
-      h('a', { href: `/h/${hotelId}/qr`, 'data-link': true, class: 'btn-big btn-tile' }, t('printQr')),
+      h('a', { href: `/h/${hotelId}/qr`, 'data-link': true, class: 'btn-big btn-tile' }, icon('printer'), t('printQr')),
       timing,
       roomForm,
       data.rooms.length ? h('h2', null, t('roomsList')) : null,
@@ -292,6 +296,7 @@ export async function hotelPage(hotelId) {
                   setTab('settings');
                 },
               },
+              icon('trash', 18),
               t('delete'),
             ),
           ),
