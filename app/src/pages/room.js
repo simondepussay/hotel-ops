@@ -5,6 +5,9 @@ import { gt, guestLang, setGuestLang, GUEST_LANGS } from '../i18n/guest.js';
 import { api, guestToken } from '../api.js';
 import { topBar, loading, formatDuration } from './common.js';
 import { icon } from '../icons.js';
+import { chatThread, scrollToEnd } from '../chat.js';
+import { live } from '../live.js';
+import { store } from '../dom.js';
 
 export async function roomPage(code) {
   mount(loading());
@@ -26,10 +29,83 @@ function staffRoom(code, data) {
   let askDifficulty = false;
   let category = 'cleaning';
   let tick = null;
+  let messages = null;
+  let guestLangCode = room.guestLang;
+  const threadBox = h('div', { class: 'chat-scroll' });
+  const langLabel = h('small', { class: 'with-icon' });
+
+  async function loadChat() {
+    if (!room.occupied) return;
+    try {
+      ({ messages, guestLang: guestLangCode } = await api(`r/${code}/messages`));
+    } catch {
+      return;
+    }
+    renderThread();
+  }
+
+  function renderThread() {
+    fill(
+      threadBox,
+      messages
+        ? chatThread(messages, {
+            me: 'staff',
+            viewLang: staffLang,
+            labels: {
+              original: t('showOriginal'),
+              translation: t('showTranslation'),
+              empty: t('chatEmpty'),
+              staff: t('team'),
+              guest: t('guestLabel'),
+            },
+            time: dateTime,
+          })
+        : loading(),
+    );
+    fill(langLabel, guestLangCode ? [icon('globe', 14), `${t('guestSpeaks')} : ${GUEST_LANGS[guestLangCode] || guestLangCode}`] : null);
+    scrollToEnd(threadBox);
+  }
+
+  function chatBlock() {
+    if (!room.occupied) return null;
+    const text = h('textarea', { rows: 2, placeholder: t('chatPlaceholder'), maxlength: 1000 });
+    const send = h('button', { class: 'btn-big btn-primary', type: 'submit' }, icon('send'), t('send'));
+    return h(
+      'form',
+      {
+        class: 'card stack chat-card',
+        onSubmit: async (e) => {
+          e.preventDefault();
+          if (!text.value.trim()) return;
+          send.disabled = true;
+          try {
+            const { message } = await api(`r/${code}/messages`, { method: 'POST', body: { text: text.value } });
+            messages = [...(messages || []), message];
+            text.value = '';
+            renderThread();
+          } finally {
+            send.disabled = false;
+          }
+        },
+      },
+      h(
+        'div',
+        { class: 'chat-head' },
+        h('h2', { class: 'with-icon' }, icon('chat', 22), t('chat')),
+        langLabel,
+      ),
+      threadBox,
+      text,
+      send,
+    );
+  }
 
   async function reload() {
+    const wasOccupied = room.occupied;
     ({ room, hotel, events } = await api(`r/${code}`));
+    if (!room.occupied) messages = null;
     draw();
+    if (room.occupied && !wasOccupied) loadChat();
   }
 
   async function setStatus(status, difficulty) {
@@ -231,6 +307,7 @@ function staffRoom(code, data) {
         ),
         statusActions(),
         stayBlock(),
+        chatBlock(),
         commentBlock(),
         historyBlock(),
       ),
@@ -238,7 +315,21 @@ function staffRoom(code, data) {
   }
 
   draw();
-  return () => clearInterval(tick);
+  if (messages) renderThread();
+  loadChat();
+
+  // Temps réel : un nouveau message de cette chambre recharge le fil.
+  const conn = live(`hotels/${hotel.id}/live`, (ev) => {
+    if (ev.type === 'connected' || (ev.type === 'message' && ev.roomId === room.id)) loadChat();
+  });
+  // Sans temps réel (en local), on recharge le fil toutes les 15 secondes.
+  const chatPoll = setInterval(() => !conn.connected && loadChat(), 15000);
+
+  return () => {
+    clearInterval(tick);
+    clearInterval(chatPoll);
+    conn.stop();
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -247,7 +338,8 @@ function staffRoom(code, data) {
 /* ------------------------------------------------------------------ */
 
 export const KIND_ICONS = { towels: 'towel', cleaning: 'sparkle', amenities: 'bottle', problem: 'wrench', other: 'chat' };
-const KINDS = Object.entries(KIND_ICONS);
+// Le message libre passe maintenant par le chat : les tuiles de demande gardent les 4 premiers types.
+const KINDS = Object.entries(KIND_ICONS).filter(([k]) => k !== 'other');
 const WELCOME = ['ようこそ', 'Welcome', '欢迎', '환영합니다'];
 
 function guestRoom(code, data) {
@@ -256,6 +348,11 @@ function guestRoom(code, data) {
   let menuOpen = false;
   let selected = null;
   let notice = '';
+  let screen = 'home'; // 'home' ou 'chat'
+  let messages = [];
+  let conn = null;
+  let poll = null;
+  const seenKey = 'hotelops.chatseen.' + code;
   document.body.classList.add('guest-mode');
 
   function chooseLang(k) {
@@ -389,23 +486,67 @@ function guestRoom(code, data) {
     );
   }
 
-  async function mainView(container) {
+  // Si le séjour est terminé (départ), on revient à l'écran du code.
+  function stayEnded() {
+    guestToken.clear(code);
+    token = null;
+    notice = gt('stayExpired');
+    conn?.stop();
+    conn = null;
+    draw();
+  }
+
+  async function fetchMessages() {
+    try {
+      ({ messages } = await api(`r/${code}/messages`, { guest: token }));
+      return true;
+    } catch (e) {
+      if (e.code === 'stay_expired') stayEnded();
+      return false;
+    }
+  }
+
+  // Nombre de messages du staff arrivés depuis la dernière ouverture du chat.
+  function unreadCount() {
+    const seen = store(seenKey) || '';
+    return messages.filter((m) => m.from === 'staff' && m.at > seen).length;
+  }
+
+  function markSeen() {
+    const last = messages[messages.length - 1];
+    if (last) store(seenKey, last.at);
+  }
+
+  async function homeView(container) {
     let requests = [];
     try {
       ({ requests } = await api(`r/${code}/requests`, { guest: token }));
     } catch (e) {
-      if (e.code === 'stay_expired') {
-        guestToken.clear(code);
-        token = null;
-        notice = gt('stayExpired');
-        return draw();
-      }
+      if (e.code === 'stay_expired') return stayEnded();
     }
+    await fetchMessages();
+    if (!token || screen !== 'home') return;
+    const unread = unreadCount();
     const text = h('textarea', { rows: 3, placeholder: gt('messagePlaceholder'), maxlength: 500 });
     fill(
       container,
       hero(gt('welcome'), gt('whatNeed')),
       notice ? h('p', { class: 'g-notice', role: 'status' }, icon('check', 18), notice) : null,
+      h(
+        'button',
+        {
+          class: 'g-card g-chat-open',
+          onClick: () => {
+            screen = 'chat';
+            notice = '';
+            selected = null;
+            refresh(container);
+          },
+        },
+        h('span', { class: 'g-kind-icon' }, icon('chat', 26)),
+        h('span', { class: 'g-chat-open-main' }, h('strong', null, gt('chat')), h('small', null, gt('chatLead'))),
+        unread ? h('span', { class: 'g-badge', 'aria-label': String(unread) }, String(unread)) : icon('next', 20),
+      ),
       h(
         'div',
         { class: 'g-kinds' },
@@ -418,7 +559,7 @@ function guestRoom(code, data) {
               onClick: () => {
                 selected = k;
                 notice = '';
-                mainView(container);
+                homeView(container);
               },
             },
             h('span', { class: 'g-kind-icon' }, icon(ic, 26)),
@@ -433,7 +574,6 @@ function guestRoom(code, data) {
               class: 'g-card g-stack',
               onSubmit: async (e) => {
                 e.preventDefault();
-                if (selected === 'other' && !text.value.trim()) return;
                 try {
                   await api(`r/${code}/requests`, {
                     method: 'POST',
@@ -445,7 +585,7 @@ function guestRoom(code, data) {
                 } catch {
                   notice = gt('error');
                 }
-                mainView(container);
+                homeView(container);
               },
             },
             h('h2', { class: 'g-with-icon' }, icon(KIND_ICONS[selected], 22), gt(selected)),
@@ -459,7 +599,7 @@ function guestRoom(code, data) {
                   type: 'button',
                   onClick: () => {
                     selected = null;
-                    mainView(container);
+                    homeView(container);
                   },
                 },
                 gt('cancel'),
@@ -492,7 +632,93 @@ function guestRoom(code, data) {
     );
   }
 
-  let poll = null;
+  // Écran du chat : le formulaire reste en place, seul le fil est redessiné.
+  const threadBox = h('div', { class: 'chat-scroll g-chat-scroll' });
+  const time = (iso) => new Date(iso).toLocaleTimeString(guestLang() || 'en', { hour: '2-digit', minute: '2-digit' });
+
+  function renderThread() {
+    fill(
+      threadBox,
+      chatThread(messages, {
+        me: 'guest',
+        viewLang: guestLang() || 'en',
+        labels: {
+          original: gt('showOriginal'),
+          translation: gt('showTranslation'),
+          empty: gt('noMessages'),
+          staff: gt('staff'),
+          guest: gt('you'),
+        },
+        time,
+      }),
+    );
+    markSeen();
+    scrollToEnd(threadBox);
+  }
+
+  async function chatView(container) {
+    const text = h('textarea', { rows: 2, placeholder: gt('chatPlaceholder'), maxlength: 1000, 'aria-label': gt('chatPlaceholder') });
+    const send = h('button', { class: 'g-primary', type: 'submit' }, icon('send', 18), gt('send'));
+    fill(threadBox, loading());
+    fill(
+      container,
+      h(
+        'button',
+        {
+          class: 'g-back',
+          onClick: () => {
+            screen = 'home';
+            refresh(container);
+          },
+        },
+        icon('back', 18),
+        gt('back'),
+      ),
+      hero(gt('chat'), gt('chatLead')),
+      h(
+        'form',
+        {
+          class: 'g-card g-stack g-chat',
+          onSubmit: async (e) => {
+            e.preventDefault();
+            if (!text.value.trim()) return;
+            send.disabled = true;
+            try {
+              const { message } = await api(`r/${code}/messages`, {
+                method: 'POST',
+                guest: token,
+                body: { text: text.value, lang: guestLang() },
+              });
+              messages = [...messages, message];
+              text.value = '';
+              renderThread();
+            } catch (ex) {
+              if (ex.code === 'stay_expired') return stayEnded();
+            } finally {
+              send.disabled = false;
+            }
+          },
+        },
+        threadBox,
+        text,
+        h('div', { class: 'g-actions' }, send),
+      ),
+    );
+    if (await fetchMessages()) renderThread();
+  }
+
+  // Recharge l'écran affiché, sauf si le client est en train d'écrire une demande ou d'ouvrir le menu.
+  async function refresh(container, { quiet = false } = {}) {
+    if (!token) return;
+    if (screen === 'chat') {
+      if (!quiet) return chatView(container);
+      if (await fetchMessages()) renderThread();
+      return;
+    }
+    if (quiet && (selected || menuOpen)) return;
+    return homeView(container);
+  }
+
   function draw() {
     clearInterval(poll);
     document.documentElement.lang = guestLang() || 'en';
@@ -514,14 +740,26 @@ function guestRoom(code, data) {
     }
     const container = h('section', { class: 'g-shell' }, loading());
     mount(waves, header(), container, footer());
-    mainView(container);
-    // Rafraîchit le statut des demandes (le chat temps réel viendra en phase 3).
-    poll = setInterval(() => !selected && !menuOpen && mainView(container), 20000);
+    refresh(container);
+
+    // Temps réel : réponse du staff, demande traitée, ou départ du client.
+    conn?.stop();
+    conn = live(
+      `r/${code}/live`,
+      (ev) => {
+        if (ev.type === 'stay_end') return stayEnded();
+        if (ev.type === 'connected' || ev.type === 'message' || ev.type === 'request') refresh(container, { quiet: true });
+      },
+      { guest: token },
+    );
+    // Sans temps réel (en local), rafraîchissement toutes les 15 secondes.
+    poll = setInterval(() => !conn?.connected && refresh(container, { quiet: true }), 15000);
   }
 
   draw();
   return () => {
     clearInterval(poll);
+    conn?.stop();
     document.body.classList.remove('guest-mode');
     document.documentElement.lang = staffLang;
   };

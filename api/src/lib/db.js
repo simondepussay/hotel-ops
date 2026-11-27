@@ -71,6 +71,11 @@ export function recentKey() {
   return String(9999999999999 - Date.now()).padStart(13, '0') + '_' + Math.random().toString(36).slice(2, 8);
 }
 
+// Clé qui trie du plus ancien au plus récent (fil de discussion).
+export function timeKey() {
+  return String(Date.now()).padStart(13, '0') + '_' + Math.random().toString(36).slice(2, 8);
+}
+
 export function newId(prefix = '') {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }

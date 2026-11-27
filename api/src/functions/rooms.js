@@ -3,6 +3,7 @@ import { route, need, str, HttpError } from '../lib/http.js';
 import { get, merge, insert, list, remove, newId, recentKey } from '../lib/db.js';
 import { requireUser, currentUser, canAccessHotel } from '../lib/auth.js';
 import { loadHotel, publicHotel, publicRoom, roomByCode } from '../lib/model.js';
+import { publish, hotelGroup, stayGroup } from '../lib/realtime.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans 0/O ni 1/I
 const STATUSES = ['todo', 'cleaning', 'done'];
@@ -100,7 +101,7 @@ async function staffRoom(request, code) {
 }
 
 // Changement de statut. En mode chronométré : « cleaning » démarre le chrono, « done » l'arrête.
-route('room-status', ['POST'], 'r/{code}/status', async ({ request, params, body }) => {
+route('room-status', ['POST'], 'r/{code}/status', async ({ request, context, params, body }) => {
   const { user, room, hotel } = await staffRoom(request, params.code);
   const status = need(body.status);
   if (!STATUSES.includes(status)) throw new HttpError(400, 'bad_status');
@@ -128,6 +129,7 @@ route('room-status', ['POST'], 'r/{code}/status', async ({ request, params, body
     await addEvent(room, user, { kind: 'status_todo' });
   }
   await merge('rooms', patch);
+  await publish(hotelGroup(hotel.rowKey), { type: 'room', roomId: room.rowKey }, context.log);
   return { room: publicRoom({ ...room, ...patch }), timingMode: !!hotel.timingMode };
 });
 
@@ -140,7 +142,7 @@ route('room-comment', ['POST'], 'r/{code}/comments', async ({ request, params, b
 });
 
 // Arrivée du client : génère le code séjour à 4 chiffres.
-route('room-checkin', ['POST'], 'r/{code}/checkin', async ({ request, params }) => {
+route('room-checkin', ['POST'], 'r/{code}/checkin', async ({ request, context, params }) => {
   const { user, room } = await staffRoom(request, params.code);
   const patch = {
     partitionKey: room.partitionKey,
@@ -150,14 +152,17 @@ route('room-checkin', ['POST'], 'r/{code}/checkin', async ({ request, params }) 
     stayStartedAt: new Date().toISOString(),
     pinFails: 0,
     pinLockedUntil: '',
+    guestLang: '',
+    chatUnread: 0,
   };
   await merge('rooms', patch);
   await addEvent(room, user, { kind: 'checkin' });
+  await publish(hotelGroup(room.partitionKey), { type: 'room', roomId: room.rowKey }, context.log);
   return { room: publicRoom({ ...room, ...patch }) };
 });
 
 // Départ : le séjour est effacé, les jetons clients de ce séjour ne marchent plus.
-route('room-checkout', ['POST'], 'r/{code}/checkout', async ({ request, params }) => {
+route('room-checkout', ['POST'], 'r/{code}/checkout', async ({ request, context, params }) => {
   const { user, room } = await staffRoom(request, params.code);
   const patch = {
     partitionKey: room.partitionKey,
@@ -166,8 +171,12 @@ route('room-checkout', ['POST'], 'r/{code}/checkout', async ({ request, params }
     stayPin: '',
     stayStartedAt: '',
     status: 'todo',
+    guestLang: '',
+    chatUnread: 0,
   };
   await merge('rooms', patch);
   await addEvent(room, user, { kind: 'checkout' });
+  await publish(hotelGroup(room.partitionKey), { type: 'room', roomId: room.rowKey }, context.log);
+  await publish(stayGroup(room.stayId), { type: 'stay_end' }, context.log);
   return { room: publicRoom({ ...room, ...patch }) };
 });
