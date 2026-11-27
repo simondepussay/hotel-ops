@@ -1,6 +1,6 @@
 // Page ouverte par le QR de la chambre : vue staff si connecté à cet hôtel, sinon vue client.
 import { h, fill, mount } from '../dom.js';
-import { t, errText, ago, dateTime } from '../i18n/staff.js';
+import { t, errText, ago, dateTime, lang as staffLang } from '../i18n/staff.js';
 import { gt, guestLang, setGuestLang, GUEST_LANGS } from '../i18n/guest.js';
 import { api, guestToken } from '../api.js';
 import { topBar, loading, formatDuration } from './common.js';
@@ -523,5 +523,6 @@ function guestRoom(code, data) {
   return () => {
     clearInterval(poll);
     document.body.classList.remove('guest-mode');
+    document.documentElement.lang = staffLang;
   };
 }

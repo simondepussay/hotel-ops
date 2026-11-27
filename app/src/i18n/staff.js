@@ -1,7 +1,97 @@
-// Textes de l'interface staff / director (FR, EN).
+// Textes de l'interface staff / director (JA, FR, EN). Le japonais est la langue par défaut.
 import { store } from '../dom.js';
 
 const dict = {
+  ja: {
+    appName: 'Hotel Ops',
+    login: 'ログイン',
+    logout: 'ログアウト',
+    register: '管理者アカウントを作成',
+    haveAccount: 'アカウントをお持ちの方',
+    username: 'ユーザーID',
+    password: 'パスワード',
+    name: '表示名',
+    myHotels: 'マイホテル',
+    newHotel: '新しいホテル',
+    hotelName: 'ホテル名',
+    create: '作成',
+    tabRooms: '客室',
+    tabRequests: 'リクエスト',
+    tabTeam: 'スタッフ',
+    tabSettings: '設定',
+    all: 'すべて',
+    todo: '未清掃',
+    cleaning: '清掃中',
+    done: '清掃済',
+    noRooms: '客室がまだありません。「設定」から追加してください。',
+    occupied: '滞在中',
+    lastCleaned: '前回の清掃',
+    never: '未実施',
+    by: '担当',
+    markDone: '清掃完了にする',
+    markTodo: '未清掃に戻す',
+    startCleaning: '清掃を開始',
+    finishCleaning: '清掃を終了',
+    howHard: 'どうでしたか？',
+    easy: 'かんたん',
+    normal: 'ふつう',
+    hard: 'たいへん',
+    elapsed: '経過時間',
+    stay: '滞在',
+    stayPin: 'お客様に伝える滞在コード',
+    checkin: 'チェックイン',
+    checkout: 'チェックアウト',
+    confirmCheckout: 'チェックアウトしますか？滞在コードは使えなくなります。',
+    noStay: '滞在なし',
+    addComment: 'コメントを追加',
+    catCleaning: '清掃',
+    catConsumption: '消費',
+    catRoom: '客室',
+    commentPlaceholder: 'ここに入力…',
+    send: '送信',
+    history: '履歴',
+    noHistory: 'まだ何もありません。',
+    ev_cleaning_start: '清掃開始',
+    ev_cleaning_done: '清掃終了',
+    ev_status_todo: '未清掃に戻した',
+    ev_checkin: 'チェックイン',
+    ev_checkout: 'チェックアウト',
+    ev_comment: 'コメント',
+    back: '戻る',
+    noRequests: 'リクエストはありません。',
+    openRequests: '未対応',
+    doneRequests: '対応済み',
+    requestDone: '対応済みにする',
+    room: '客室',
+    team: 'スタッフ',
+    addStaff: 'スタッフを追加',
+    delete: '削除',
+    confirmDelete: '削除しますか？',
+    timingMode: '計測モード',
+    timingHelp: '清掃の開始時と終了時にQRを読み取り、難しさを選びます。',
+    on: 'オン',
+    off: 'オフ',
+    addRooms: '客室を追加',
+    roomNumbers: '部屋番号（例：101-110, 201-205）',
+    floor: '階（任意）',
+    printQr: 'QRコードを印刷',
+    print: '印刷',
+    qrHelp: '1部屋につきQRは1つ。お客様もスタッフも同じコードを読み取ります。',
+    roomsList: '客室一覧',
+    added: '件追加しました',
+    saved: '保存しました',
+    wrongHotel: 'この客室は別のホテルのものです。',
+    err_bad_credentials: 'ユーザーIDまたはパスワードが正しくありません。',
+    err_username_taken: 'このユーザーIDはすでに使われています。',
+    err_bad_username: 'ユーザーID：3〜32文字（a-z、0-9、. _ -）',
+    err_weak_password: 'パスワードが短すぎます。',
+    err_room_not_found: '客室が見つかりません。',
+    err_forbidden: 'アクセスできません。',
+    err_server_error: 'サーバーエラーです。もう一度お試しください。',
+    err_network: '接続がありません。',
+    avgTime: '平均時間',
+    min: '分',
+  },
   fr: {
     appName: 'Hotel Ops',
     login: 'Se connecter',
@@ -184,13 +274,24 @@ const dict = {
   },
 };
 
-export const STAFF_LANGS = { fr: 'FR', en: 'EN' };
+export const STAFF_LANGS = { ja: '日本語', en: 'EN', fr: 'FR' };
 
-export let lang = store('hotelops.lang.staff') || (navigator.language?.startsWith('fr') ? 'fr' : 'en');
+// Marché principal : le Japon. Le japonais est choisi sauf si le navigateur est en français ou en anglais.
+function defaultLang() {
+  const nav = navigator.language || '';
+  if (nav.startsWith('fr')) return 'fr';
+  if (nav.startsWith('en')) return 'en';
+  return 'ja';
+}
+
+const saved = store('hotelops.lang.staff');
+export let lang = saved in dict ? saved : defaultLang();
+document.documentElement.lang = lang;
 
 export function setLang(l) {
   lang = l;
   store('hotelops.lang.staff', l);
+  document.documentElement.lang = l;
 }
 
 export function t(key) {
@@ -199,7 +300,7 @@ export function t(key) {
 
 export function errText(e) {
   if (e instanceof TypeError) return t('err_network');
-  return dict[lang]['err_' + e.code] || t('err_server_error');
+  return dict[lang]?.['err_' + e.code] || t('err_server_error');
 }
 
 export function ago(iso) {
