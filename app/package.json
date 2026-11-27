@@ -1,0 +1,17 @@
+{
+  "name": "hotel-ops-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5180 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}

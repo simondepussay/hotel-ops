@@ -1,0 +1,14 @@
+{
+  "name": "hotel-ops-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/functions/*.js",
+  "scripts": {
+    "start": "func start --port 7071"
+  },
+  "dependencies": {
+    "@azure/data-tables": "^13.3.0",
+    "@azure/functions": "^4.6.0"
+  }
+}
