@@ -33,6 +33,8 @@ Le QR mène à `https://<site>/r/<code-chambre>`. La page s'adapte à la personn
 | Chat en temps réel | **Azure Web PubSub** (Free : 20 connexions) | Gratuit au début, phase 3 |
 | Traduction du chat | **Azure AI Translator** (F0 : 2 M caractères par mois) | Gratuit au début, phase 3 |
 
+Régions : la SWA est en East Asia ; le stockage est en Korea Central, car l'abonnement étudiant bloque Japan East.
+
 En local, **Azurite** émule Table Storage, sans Docker.
 
 Front : JavaScript simple avec **Vite**, sans framework. Un petit routeur et un petit helper `h()` pour créer le DOM, ce qui évite `innerHTML` et donc les injections XSS.
