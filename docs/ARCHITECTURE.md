@@ -62,7 +62,7 @@ L'horodatage inversé (`9999999999999 - Date.now()`) fait sortir les éléments 
 
 ## Langues
 
-- Staff et director : FR, EN. Ajouter JA est recommandé pour le marché japonais.
+- Staff et director : 日本語 (par défaut), EN, FR. Le japonais est choisi sauf si le navigateur est en français ou en anglais.
 - Client : FR, EN, JA, 中文, 한국어, ES, DE.
 
 ## Phases
